@@ -1,6 +1,8 @@
 # This is an example of popping a packet from the Emotiv class's packet queue
 # and printing the gyro x and y values to the console. 
 
+from __future__ import print_function
+
 from emokit.emotiv import Emotiv
 import platform
 if platform.system() == "Windows":
@@ -14,7 +16,7 @@ if __name__ == "__main__":
     try:
         while True:
             packet = headset.dequeue()
-            print packet.gyro_x, packet.gyro_y
+            print(packet.gyro_x, packet.gyro_y)
             gevent.sleep(0)
     except KeyboardInterrupt:
         headset.close()
