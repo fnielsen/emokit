@@ -1,3 +1,6 @@
+from __future__ import division, print_function
+from six import indexbytes
+
 import os
 import platform
 system_platform = platform.system()
@@ -7,6 +10,7 @@ if system_platform == "Windows":
 else:
     if system_platform == "Darwin":
         import hid
+import sys
 import gevent
 from Crypto.Cipher import AES
 from Crypto import Random
@@ -201,8 +205,8 @@ def get_level(data, bits):
     level = 0
     for i in range(13, -1, -1):
         level <<= 1
-        b, o = (bits[i] / 8) + 1, bits[i] % 8
-        level |= (ord(data[b]) >> o) & 1
+        b, o = (bits[i] // 8) + 1, bits[i] % 8
+        level |= (indexbytes(data, b) >> o) & 1
     return level
 
 
@@ -213,6 +217,7 @@ def get_linux_setup():
     raw_inputs = []
     for filename in os.listdir("/sys/class/hidraw"):
         real_path = check_output(["realpath", "/sys/class/hidraw/" + filename])
+        real_path = real_path.decode(sys.stdout.encoding)
         split_path = real_path.split('/')
         s = len(split_path)
         s -= 4
@@ -231,17 +236,17 @@ def get_linux_setup():
                 with open(input[0] + "/serial", 'r') as f:
                     serial = f.readline().strip()
                     f.close()
-                print "Serial: " + serial + " Device: " + input[1]
+                print("Serial: " + serial + " Device: " + input[1])
                 # Great we found it. But we need to use the second one...
                 hidraw = input[1]
                 hidraw_id = int(hidraw[-1])
                 # The dev headset might use the first device, or maybe if more than one are connected they might.
                 hidraw_id += 1
                 hidraw = "hidraw" + hidraw_id.__str__()
-                print "Serial: " + serial + " Device: " + hidraw + " (Active)"
+                print("Serial: " + serial + " Device: " + hidraw + " (Active)")
                 return [serial, hidraw, ]
         except IOError as e:
-            print "Couldn't open file: %s" % e
+            print("Couldn't open file: %s" % e)
 
 
 def hid_enumerate():
@@ -254,8 +259,8 @@ def hid_enumerate():
         keys = d.keys()
         keys.sort()
         for key in keys:
-            print "%s : %s" % (key, d[key])
-            print ""
+            print("%s : %s" % (key, d[key]))
+            print("")
   
 
 def is_old_model(serial_number):
@@ -276,15 +281,15 @@ class EmotivPacket(object):
         """
         global g_battery
         self.raw_data = data
-        self.counter = ord(data[0])
+        self.counter = indexbytes(data, 0)
         self.battery = g_battery
         if self.counter > 127:
             self.battery = self.counter
             g_battery = battery_values[str(self.battery)]
             self.counter = 128
         self.sync = self.counter == 0xe9
-        self.gyro_x = ord(data[29]) - 106
-        self.gyro_y = ord(data[30]) - 105
+        self.gyro_x = indexbytes(data, 29) - 106
+        self.gyro_y = indexbytes(data, 30) - 105
         sensors['X']['value'] = self.gyro_x
         sensors['Y']['value'] = self.gyro_y
         for name, bits in sensor_bits.items():
@@ -302,10 +307,10 @@ class EmotivPacket(object):
         Optionally will return the value.
         """
         if self.old_model:
-            current_contact_quality = get_level(self.raw_data, quality_bits) / 540
+            current_contact_quality = get_level(self.raw_data, quality_bits) // 540
         else:
-            current_contact_quality = get_level(self.raw_data, quality_bits) / 1024
-        sensor = ord(self.raw_data[0])
+            current_contact_quality = get_level(self.raw_data, quality_bits) // 1024
+        sensor = indexbytes(self.raw_data, 0)
         if sensor == 0 or sensor == 64:
             sensors['F3']['quality'] = current_contact_quality
         elif sensor == 1 or sensor == 65:
@@ -395,7 +400,7 @@ class Emotiv(object):
         """
         Runs setup function depending on platform.
         """
-        print system_platform + " detected."
+        print(system_platform + " detected.")
         if system_platform == "Windows":
             self.setup_windows()
         elif system_platform == "Linux":
@@ -465,14 +470,14 @@ class Emotiv(object):
         if os.path.exists('/dev/eeg/raw'):
             # The decryption is handled by the Linux epoc daemon. We don't need to handle it.
             _os_decryption = True
-            hidraw = open("/dev/eeg/raw")
+            hidraw = open("/dev/eeg/raw", 'rb')
         else:
             serial, hidraw_filename = get_linux_setup()
             self.serial_number = serial
             if os.path.exists("/dev/" + hidraw_filename):
-                hidraw = open("/dev/" + hidraw_filename)
+                hidraw = open("/dev/" + hidraw_filename, 'rb')
             else:
-                hidraw = open("/dev/hidraw4")
+                hidraw = open("/dev/hidraw4", 'rb')
             crypto = gevent.spawn(self.setup_crypto, self.serial_number)
         console_updater = gevent.spawn(self.update_console)
         while self.running:
@@ -512,10 +517,10 @@ class Emotiv(object):
         if not hidraw:
             hidraw = hid.device(0xed02, 0x1234)
         if not hidraw:
-            print "Device not found. Uncomment the code in setup_darwin and modify hid.device(vendor_id, product_id)"
+            print("Device not found. Uncomment the code in setup_darwin and modify hid.device(vendor_id, product_id)")
             raise ValueError
         if self.serial_number == "":
-            print "Serial number needs to be specified manually in __init__()."
+            print("Serial number needs to be specified manually in __init__().")
             raise ValueError
         crypto = gevent.spawn(self.setup_crypto, self.serial_number)
         console_updater = gevent.spawn(self.update_console)
@@ -551,7 +556,7 @@ class Emotiv(object):
         """
         if is_old_model(sn):
             self.old_model = True
-        print self.old_model
+        print(self.old_model)
         k = ['\0'] * 16
         k[0] = sn[-1]
         k[1] = '\0'
@@ -584,7 +589,7 @@ class Emotiv(object):
         iv = Random.new().read(AES.block_size)
         cipher = AES.new(key, AES.MODE_ECB, iv)
         for i in k:
-            print "0x%.02x " % (ord(i))
+            print("0x%.02x " % (ord(i)))
         while self.running:
             while not tasks.empty():
                 task = tasks.get()
@@ -603,8 +608,8 @@ class Emotiv(object):
         """
         try:
             return self.packets.get()
-        except Exception, e:
-            print e
+        except Exception as e:
+            print(e)
 
     def close(self):
         """
@@ -622,11 +627,11 @@ class Emotiv(object):
                     os.system('cls')
                 else:
                     os.system('clear')
-                print "Packets Received: %s Packets Processed: %s" % (self.packets_received, self.packets_processed)
+                print("Packets Received: %s Packets Processed: %s" % (self.packets_received, self.packets_processed))
                 print('\n'.join("%s Reading: %s Quality: %s" %
                                 (k[1], self.sensors[k[1]]['value'],
                                  self.sensors[k[1]]['quality']) for k in enumerate(self.sensors)))
-                print "Battery: %i" % g_battery
+                print("Battery: %i" % g_battery)
                 gevent.sleep(.001)
 
 if __name__ == "__main__":
